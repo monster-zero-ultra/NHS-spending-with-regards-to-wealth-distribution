@@ -1,0 +1,208 @@
+from sqlalchemy import create_engine, text
+import pandas as pd
+import pyodbc
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+# from scipy import stats
+# import statsmodels.api as sm    
+# from statsmodels.formula.api import ols
+# from statsmodels.stats.multicomp import pairwise_tukeyhsd
+
+server = 'localhost'
+port = '1433'
+USER = 'sa'
+PASSWORD = 'CS4505$%)%'
+DATABASE = 'CS4505 NHS DATA V1'
+
+
+
+engine = create_engine(f'mssql+pyodbc://{USER}:{PASSWORD}@{server}:{port}/{DATABASE}?driver=ODBC+Driver+17+for+SQL+Server')
+
+
+# table_name = '[NHS PANDAS SQL DATASET]'
+# query = f'SELECT ADDRESS_3, TOTAL_AVG_INCOME_LOCAL, ACTUAL_COST, TOTAL_AVG_INCOME_LOCAL, BNF_CHAPTER_PLUS_CODE  FROM {table_name}'
+
+# new_NHS_df = pd.read_sql(query, engine)
+# NHS_df.to_pickle('NHS_df.pkl')
+
+# Load the DataFrame from a file
+new_NHS_df = pd.read_pickle('NHS_df.pkl')
+
+# percentile_98 = NHS_df['ACTUAL_COST'].quantile(0.98)
+# filtered_df = NHS_df[NHS_df['ACTUAL_COST'] < percentile_98]
+
+
+
+# # #below lies a pile of code i used to sort, filter and plot the data
+# # #it is ugly and served its purpose, but here it shall rest now that its duty is done
+# # #rest now together with your friends my garbage code
+
+percentiles = new_NHS_df['TOTAL_AVG_INCOME_LOCAL'].quantile([0.25, 0.5, 0.75])
+
+def categorize_income(row):
+    if row['TOTAL_AVG_INCOME_LOCAL'] <= percentiles[0.25]:
+        return 'Low'
+    elif row['TOTAL_AVG_INCOME_LOCAL'] <= percentiles[0.5]:
+        return '25-50th Percentile'
+    elif row['TOTAL_AVG_INCOME_LOCAL'] <= percentiles[0.75]:
+        return '50th-75th Percentile'
+    else:
+        return 'Top'
+new_NHS_df['Income_Category'] = new_NHS_df.apply(categorize_income, axis=1)
+# filtered_df['Income_Category'] = filtered_df.apply(categorize_income, axis=1)
+# filtered_df['TOTAL_SPENT'] = filtered_df.groupby('Income_Category')['ACTUAL_COST'].transform('sum')
+
+
+# filtered_df = filtered_df.dropna(subset=['ACTUAL_COST', 'Income_Category'])
+# print(filtered_df.head(5))
+
+# focus_low = ('BLACKPOOL', 'STOKE-ON-TRENT', 'WOLVERHAMPTON')
+# FOCUS_25 = ('BOLSOVER', 'WELLINGBOROUGH', 'PRESTON')
+# FOCUS_50 = ('SOUTH HAMPTON', 'STOCKPORT', 'HARLOW')
+# FOCUS_75 = ('ASHFORD', 'ENFIELD', 'GREENWICH')
+# FOCUS_TOP = ('ST.ALBANS', 'WOKINGHAM', 'RICHMOND UPON THAMES')
+
+# FOCUS_MAIN = focus_low + FOCUS_25 + FOCUS_50 + FOCUS_75 + FOCUS_TOP
+
+# filtered_df = NHS_df[NHS_df['ADDRESS_3'].isin(FOCUS_MAIN)]
+#filtered_df['Economic Group']= filtered_df['ADDRESS_3'].apply(lambda x: 'Low' if x in focus_low else '25th Percentile' if x in FOCUS_25 else '50th Percentile' if x in FOCUS_50 else '75th Percentile' if x in FOCUS_75 else 'Top')
+
+bins = range(20000, int(new_NHS_df['TOTAL_AVG_INCOME_LOCAL'].max()) + 10000, 10000)
+labels = [f'{i}-{i+10000}' for i in bins[:-1]]
+new_NHS_df['Income_Group'] = pd.cut(new_NHS_df['TOTAL_AVG_INCOME_LOCAL'], bins=bins, labels=labels, right=False)
+# income_group_counts = NHS_df['Income_Group'].value_counts().sort_index().reset_index()
+# income_group_counts.columns = ['Income_Group', 'Count']
+
+
+new_NHS_df.to_json('/Users/patcallanan/Desktop/untitled folder/NHS_DATA.json', orient='records')
+############################################################################################################
+
+
+#to be fancy and challenge ourselfs
+#we must not only do our pandas code,
+#but also take a metric from our panadas shenanigans and 
+#without breaking everything, update our SQL table with the new data
+# wish me luck
+# UPDATE:
+#it works, i just ran out of tempdb space on my sql server...
+#so that is nice
+#i leave the code here for posterity
+
+# NHS_df_update_table = NHS_df[['ADDRESS_3', 'Income_Category']]
+# temp_table = 'NHS PANDAS SQL DATASET TEMP'
+# NHS_df_update_table.to_sql(temp_table, con=engine, if_exists='replace', index=False)
+
+# # with engine.connect() as con:
+# #     alter_table_query = text('''
+# #     ALTER TABLE [NHS PANDAS SQL DATASET]
+# #     ADD Income_Category NVARCHAR(255);  -- Adjust the data type if necessary
+# #     ''')
+# #     con.execute(alter_table_query)
+
+# with engine.connect() as con:
+#     merge_query = text(f'''
+#     MERGE INTO [NHS PANDAS SQL DATASET] AS target
+#     USING [{temp_table}] AS source
+#     ON target.ADDRESS_3 = source.ADDRESS_3
+#     WHEN MATCHED THEN
+#         UPDATE SET target.Income_Category = source.Income_Category;
+#     ''')
+#     con.execute(merge_query)
+# with engine.connect() as con:
+#     con.execute(text(f"DROP TABLE [{temp_table}]"))
+
+
+############################################################################################################
+#distribution of expendentures
+# plt.figure(figsize=(12, 6))
+
+# sns.kdeplot(NHS_df['ACTUAL_COST'], color='r',bw_adjust=0.5)
+# plt.title('Kernel Desnity Estimate plot  of Total Expenditure')
+# plt.xscale('log')
+# plt.xlabel('Expenditure')
+# plt.ylabel('Desnsity')
+# plt.show()
+
+
+
+# #scatter plot of total expenditure vs avg income
+# plt.figure(figsize=(12, 6))
+# sns.scatterplot(x='ACTUAL_COST', y='TOTAL_AVG_INCOME_LOCAL', data=NHS_df)
+# plt.title('Expenditure vs Average Income')
+# plt.xlabel('Expenditure')
+# plt.ylabel('Average Income')
+# plt.show()
+
+# plt.figure(figsize=(16, 9))
+# sns.boxplot(x='Income_Group', y='ACTUAL_COST', data=NHS_df)
+# sns.boxplot(x='Income_Group', y='ACTUAL_COST', data=NHS_df)
+# plt.title('Distribution of Expenditures by Income Group')
+# plt.xlabel('Income Group (10k Increments)')
+# plt.ylabel('Expenditure')
+
+# plt.figure(figsize=(12, 6))
+# sns.barplot(x='Income_Group', y='Count', palette="viridis", data=income_group_counts)
+# plt.title('Count of Expenditures by Income Group')
+# plt.xlabel('Income Group (10k Increments)')
+# plt.ylabel('Count of Expenditures')
+
+
+# plt.xticks(rotation=45, ha='right')
+# plt.show()
+
+# #boxplot of total expenditure by region
+# plt.figure(figsize=(20, 9))
+# sns.boxplot(x='ADDRESS_3', y='ACTUAL_COST', data=filtered_df, hue='Economic Group')
+# plt.title('Total Expenditure by Region')
+# plt.xlabel('Region')
+# plt.ylabel('Total Expenditure in GBP')
+# plt.xticks(rotation=45, ha='right')
+
+# colors = ['#ff9999', '#66b3ff', '#99ff99', '#ffcc99', '#c2c2f0']
+
+# # Group boundary indices based on 'Area'
+# group_boundaries = {'Low': (0, 2), '25th Percentile': (3, 5), '50th Percentile': (6, 9), '75th Percentile': (10, 12), 'Top': (13, 15)}
+
+# # Add rectangles to differentiate the groups
+# for i, (group, (start, end)) in enumerate(group_boundaries.items()):
+#     plt.gca().add_patch(
+#         patches.Rectangle(
+#             (start - 0.5, plt.ylim()[0]),  # Start from the left edge of the first box
+#             end - start + 1,               # Width of the rectangle (number of boxes)
+#             plt.ylim()[1] - plt.ylim()[0], # Height of the rectangle
+#             color=colors[i],               # Color of the rectangle
+#             alpha=0.2                      # Transparency
+#         )
+#     )
+
+# # Manually add legend for the groups
+# patches_for_legend = [patches.Patch(color=color, label=group) for color, group in zip(colors, group_boundaries.keys())]
+
+# plt.legend(title='Economic Group', loc='upper right')
+# plt.show()
+
+
+# descriptive_stats = filtered_df.groupby('Income_Category')['TOTAL_SPENT'].describe()
+# print(descriptive_stats)
+
+# #ANOVA test
+# model = ols('TOTAL_SPENT ~ Income_Category', data=filtered_df).fit()
+# anova_table = sm.stats.anova_lm(model, typ=2)
+# print(anova_table)
+
+#kruskal wallis test
+# kruskal_test = stats.kruskal(*[group['ACTUAL_COST'] for name, group in NHS_df.groupby('Income_Category')])
+# print(kruskal_test)
+
+# tukey = pairwise_tukeyhsd(endog=NHS_df['ACTUAL_COST'], groups=NHS_df['Income_Category'], alpha=0.05)
+# print(tukey)
+
+# #violoin plot of total expenditure by region
+# plt.figure(figsize=(14, 7))
+# sns.violinplot(x='ADDRESS_3', y='ACTUAL_COST', data=NHS_df)
+# plt.title('Distribution of Total Expenditure by Region')
+# plt.xlabel('Region')
+# plt.ylabel('Total Expenditure')
+# plt.show()
